@@ -875,3 +875,103 @@ class TemporalConvLayer(nn.Module):
             (hidden_states.shape[0] * hidden_states.shape[2], -1) + hidden_states.shape[3:]
         )
         return hidden_states
+
+
+class ResnetBlockTimeless2D(nn.Module):
+    def __init__(
+        self,
+        *,
+        in_channels,
+        out_channels=None,
+        conv_shortcut=False,
+        dropout=0.0,
+        groups=32,
+        groups_out=None,
+        pre_norm=True,
+        eps=1e-6,
+        non_linearity="swish",
+        kernel=None,
+        output_scale_factor=1.0,
+        use_in_shortcut=None,
+        up=False,
+        down=False,
+        conv_shortcut_bias: bool = True,
+        conv_2d_out_channels: Optional[int] = None,
+    ):
+        super().__init__()
+        self.pre_norm = pre_norm
+        self.in_channels = in_channels
+        out_channels = in_channels if out_channels is None else out_channels
+        self.out_channels = out_channels
+        self.use_conv_shortcut = conv_shortcut
+        self.up = up
+        self.down = down
+        self.output_scale_factor = output_scale_factor
+
+        if groups_out is None:
+            groups_out = groups
+
+        self.norm1 = torch.nn.GroupNorm(num_groups=groups, num_channels=in_channels, eps=eps, affine=True)
+
+        self.conv1 = torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1)
+
+        self.norm2 = torch.nn.GroupNorm(num_groups=groups_out, num_channels=out_channels, eps=eps, affine=True)
+
+        self.dropout = torch.nn.Dropout(dropout)
+        conv_2d_out_channels = conv_2d_out_channels or out_channels
+        self.conv2 = torch.nn.Conv2d(out_channels, conv_2d_out_channels, kernel_size=3, stride=1, padding=1)
+
+        self.nonlinearity = get_activation(non_linearity)
+
+        self.upsample = self.downsample = None
+        if self.up:
+            if kernel == "fir":
+                fir_kernel = (1, 3, 3, 1)
+                self.upsample = lambda x: upsample_2d(x, kernel=fir_kernel)
+            elif kernel == "sde_vp":
+                self.upsample = partial(F.interpolate, scale_factor=2.0, mode="nearest")
+            else:
+                self.upsample = Upsample2D(in_channels, use_conv=False)
+        elif self.down:
+            if kernel == "fir":
+                fir_kernel = (1, 3, 3, 1)
+                self.downsample = lambda x: downsample_2d(x, kernel=fir_kernel)
+            elif kernel == "sde_vp":
+                self.downsample = partial(F.avg_pool2d, kernel_size=2, stride=2)
+            else:
+                self.downsample = Downsample2D(in_channels, use_conv=False, padding=1, name="op")
+
+        self.use_in_shortcut = self.in_channels != conv_2d_out_channels if use_in_shortcut is None else use_in_shortcut
+
+        self.conv_shortcut = None
+        if self.use_in_shortcut:
+            self.conv_shortcut = torch.nn.Conv2d(
+                in_channels, conv_2d_out_channels, kernel_size=1, stride=1, padding=0, bias=conv_shortcut_bias
+            )
+
+    def forward(self, input_tensor):
+        hidden_states = input_tensor
+
+        hidden_states = self.norm1(hidden_states)
+        hidden_states = self.nonlinearity(hidden_states)
+
+        if self.upsample is not None:
+            input_tensor = self.upsample(input_tensor)
+            hidden_states = self.upsample(hidden_states)
+        elif self.downsample is not None:
+            input_tensor = self.downsample(input_tensor)
+            hidden_states = self.downsample(hidden_states)
+
+        hidden_states = self.conv1(hidden_states)
+        hidden_states = self.norm2(hidden_states)
+        hidden_states = self.nonlinearity(hidden_states)
+
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.conv2(hidden_states)
+
+        if self.conv_shortcut is not None:
+            input_tensor = self.conv_shortcut(input_tensor)
+
+        output_tensor = (input_tensor + hidden_states) / self.output_scale_factor
+
+        return output_tensor

@@ -1,0 +1,81 @@
+coach:
+  target: coach.GANCoach
+  params:
+    use_ema: False
+    model_config:
+      generator:
+        target: src.diffusers.models.unet_2d_timeless.UNetTimeless2DModel
+        params:
+          sample_size : (512, 512)
+          in_channels: 3
+          out_channels: 3
+          layers_per_block: 2
+          block_out_channels: (128, 128, 256, 256, 512, 512)
+          down_block_types: (
+              "DownBlockTimeless2D",
+              "DownBlockTimeless2D",
+              "DownBlockTimeless2D",
+              "DownBlockTimeless2D",
+              "AttnDownBlockTimeless2D",
+              "DownBlockTimeless2D")
+          up_block_types: (
+              "UpBlockTimeless2D",
+              "AttnUpBlockTimeless2D",
+              "UpBlockTimeless2D",
+              "UpBlockTimeless2D",
+              "UpBlockTimeless2D",
+              "UpBlockTimeless2D",
+          )
+      discriminator:
+        target: discriminator.PatchGANDiscriminator
+        params:
+          size: 512
+          channel_multiplier: 2
+    loss_config:
+      target : losses.i2iloss.I2ILoss
+      params:
+        domain_rgb: True
+        l1_lambda: 1.0
+        l2_lambda: 0.0
+        lpips_lambda : 0.0
+        lpips_type : vgg
+        lpips_model_path : /purestorage/project/tyk/project6/predefined_iti_train/pretrained/vgg16-397923af.pth
+        tv_lambda : 0
+        ssim_lambda : 0.0
+        cnt_lambda : 0.0
+        id_lambda : 0.0
+        id_backbone_path: /purestorage/project/tyk/project6/predefined_iti_train/pretrained/model_ir_se50.pth #/home/aiteam/tykim/cubox/predefined_iti_train/pretrained/model_ir_se50.pth
+        ffl_w: 0.0 # weight for focal frequency loss
+        ffl_alpha: 0.0 # scaling factor alpha of the spectrum weight matrix for flexibility
+        gan_lambda: 0.5
+        gan_loss_type: hinge
+        r1_gamma: 10.0
+        clip_lambda : 0.5
+        clip_loss_type: clip_sim_loss
+        clip_loss_batch : 64
+        l1_apply: [0, 99999999]
+        l2_apply: [0, 1500]
+        lpips_apply: [0, 999999999]
+        tv_apply: [2000, 1000]
+        ssim_apply: [1000, 5000]
+        cnt_apply: [0, 0]
+        id_apply: [0, 0]
+        ffl_apply: [2000, 99999999] # focal frequency loss start step
+        gan_apply: [0, 999999999]
+        clip_apply: [2000, 9999999]
+
+    training_config:
+      optimizer : adam
+      batch_size : 64
+      g_scheduler : False
+      g_t_mult : 2
+      d_scheduler : False
+      d_t_mult : 2
+      lr : 1.0e-04
+      disc_lr : 1.0e-05
+      generator_step : 2
+      d_reg_every : 16
+      topk_training : False
+      generator_top_k_gamma : 0.99
+      top_k_frac : 0.5
+      inp_size : [320, 8, 8]

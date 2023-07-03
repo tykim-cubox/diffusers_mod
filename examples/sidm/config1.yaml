@@ -1,0 +1,67 @@
+coach:
+  target: core.coach.GANCoach
+  params:
+    model_config:
+      generator:
+        target: core.models.translator.ViTUNetGenerator
+        params:
+          features: 384
+          n_heads: 6
+          n_blocks: 6
+          ffn_features: 1536
+          embed_features: 384
+          activ: 'gelu'
+          norm: 'layer'
+          unet_features_list : [48, 96, 192, 384]
+          unet_activ: 'leakyrelu'
+          unet_norm: 'instance'
+          unet_downsample: 'conv'
+          unet_upsample: 'upsample-conv'
+          rezero: True
+          activ_output: 'sigmoid'
+      use_ema: False
+      ema_max_decay:
+      ema_inv_gamma:
+      ema_power: 
+    loss_config:
+      target : core.losses.i2iloss.I2ILoss
+      params:
+      
+    training_config:
+      num_epochs: 100
+      optimizer : adam
+      learning_rate : 1.0e-04
+      adam_beta: 0.95
+      adam_beta2: 0.999
+      adam_weight_decay: 1e-6
+      adam_epsilon: 1e-08
+      lr_scheduler: cosine 
+      lr_warmup_steps: 500
+      snr_gamma: # 5.0
+
+
+
+
+ parser.add_argument(
+        "--lr_scheduler",
+        type=str,
+        default="cosine",
+        help=(
+            'The scheduler type to use. Choose between ["linear", "cosine", "cosine_with_restarts", "polynomial",'
+            ' "constant", "constant_with_warmup"]'
+        ),
+    )
+
+      batch_size : 64
+      g_scheduler : False
+      g_t_mult : 2
+      d_scheduler : False
+      d_t_mult : 2
+      lr : 1.0e-04
+      disc_lr : 1.0e-05
+      generator_step : 2
+      d_reg_every : 16
+      topk_training : True
+      generator_top_k_gamma : 0.99
+      top_k_frac : 0.5
+      inp_size : [320, 8, 8]
