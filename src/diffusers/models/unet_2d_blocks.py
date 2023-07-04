@@ -178,6 +178,17 @@ def get_down_block(
             downsample_padding=downsample_padding,
             resnet_time_scale_shift=resnet_time_scale_shift,
         )
+    elif down_block_type == "DownEncoderBlockTimeless2D":
+        return DownEncoderBlockTimeless2D(
+            num_layers=num_layers,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            add_downsample=add_downsample,
+            resnet_eps=resnet_eps,
+            resnet_act_fn=resnet_act_fn,
+            resnet_groups=resnet_groups,
+            downsample_padding=downsample_padding,
+        )
     elif down_block_type == "AttnDownEncoderBlock2D":
         return AttnDownEncoderBlock2D(
             num_layers=num_layers,
@@ -391,6 +402,16 @@ def get_up_block(
             resnet_groups=resnet_groups,
             resnet_time_scale_shift=resnet_time_scale_shift,
             temb_channels=temb_channels,
+        )
+    elif up_block_type == "UpDecoderBlockTimeless2D":
+        return UpDecoderBlockTimeless2D(
+            num_layers=num_layers,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            add_upsample=add_upsample,
+            resnet_eps=resnet_eps,
+            resnet_act_fn=resnet_act_fn,
+            resnet_groups=resnet_groups,
         )
     elif up_block_type == "AttnUpDecoderBlock2D":
         return AttnUpDecoderBlock2D(
@@ -1411,6 +1432,62 @@ class DownEncoderBlock2D(nn.Module):
 
         return hidden_states
 
+class DownEncoderBlockTimeless2D(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        dropout: float = 0.0,
+        num_layers: int = 1,
+        resnet_eps: float = 1e-6,
+        resnet_time_scale_shift: str = "default",
+        resnet_act_fn: str = "swish",
+        resnet_groups: int = 32,
+        resnet_pre_norm: bool = True,
+        output_scale_factor=1.0,
+        add_downsample=True,
+        downsample_padding=1,
+    ):
+        super().__init__()
+        resnets = []
+
+        for i in range(num_layers):
+            in_channels = in_channels if i == 0 else out_channels
+            resnets.append(
+                ResnetBlockTimeless2D(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    eps=resnet_eps,
+                    groups=resnet_groups,
+                    dropout=dropout,
+                    non_linearity=resnet_act_fn,
+                    output_scale_factor=output_scale_factor,
+                    pre_norm=resnet_pre_norm,
+                )
+            )
+
+        self.resnets = nn.ModuleList(resnets)
+
+        if add_downsample:
+            self.downsamplers = nn.ModuleList(
+                [
+                    Downsample2D(
+                        out_channels, use_conv=True, out_channels=out_channels, padding=downsample_padding, name="op"
+                    )
+                ]
+            )
+        else:
+            self.downsamplers = None
+
+    def forward(self, hidden_states):
+        for resnet in self.resnets:
+            hidden_states = resnet(hidden_states)
+
+        if self.downsamplers is not None:
+            for downsampler in self.downsamplers:
+                hidden_states = downsampler(hidden_states)
+
+        return hidden_states
 
 class AttnDownEncoderBlock2D(nn.Module):
     def __init__(
@@ -2658,6 +2735,57 @@ class UpDecoderBlock2D(nn.Module):
     def forward(self, hidden_states, temb=None):
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, temb=temb)
+
+        if self.upsamplers is not None:
+            for upsampler in self.upsamplers:
+                hidden_states = upsampler(hidden_states)
+
+        return hidden_states
+
+
+class UpDecoderBlockTimeless2D(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        dropout: float = 0.0,
+        num_layers: int = 1,
+        resnet_eps: float = 1e-6,
+        resnet_act_fn: str = "swish",
+        resnet_groups: int = 32,
+        resnet_pre_norm: bool = True,
+        output_scale_factor=1.0,
+        add_upsample=True
+    ):
+        super().__init__()
+        resnets = []
+
+        for i in range(num_layers):
+            input_channels = in_channels if i == 0 else out_channels
+
+            resnets.append(
+                ResnetBlockTimeless2D(
+                    in_channels=input_channels,
+                    out_channels=out_channels,
+                    eps=resnet_eps,
+                    groups=resnet_groups,
+                    dropout=dropout,
+                    non_linearity=resnet_act_fn,
+                    output_scale_factor=output_scale_factor,
+                    pre_norm=resnet_pre_norm,
+                )
+            )
+
+        self.resnets = nn.ModuleList(resnets)
+
+        if add_upsample:
+            self.upsamplers = nn.ModuleList([Upsample2D(out_channels, use_conv=True, out_channels=out_channels)])
+        else:
+            self.upsamplers = None
+
+    def forward(self, hidden_states):
+        for resnet in self.resnets:
+            hidden_states = resnet(hidden_states)
 
         if self.upsamplers is not None:
             for upsampler in self.upsamplers:

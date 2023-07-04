@@ -24,7 +24,7 @@ coach:
               UpBlockTimeless2D,
               UpBlockTimeless2D,
               UpBlockTimeless2D,
-              UpBlockTimeless2D]
+              UpDecoderBlockTimeless2D]
       discriminator:
         target: discriminator.PatchGANDiscriminator
         params:
@@ -36,7 +36,7 @@ coach:
         domain_rgb: True
         l1_lambda: 1.0
         l2_lambda: 0.0
-        lpips_lambda : 0.0
+        lpips_lambda : 0.1
         lpips_type : vgg
         lpips_model_path : /purestorage/project/tyk/project6/predefined_iti_train/pretrained/vgg16-397923af.pth
         tv_lambda : 0
@@ -49,12 +49,12 @@ coach:
         gan_lambda: 0.5
         gan_loss_type: hinge
         r1_gamma: 10.0
-        clip_lambda : 0.5
+        clip_lambda : 0.0
         clip_loss_type: clip_sim_loss
         clip_loss_batch : 64
         l1_apply: [0, 99999999]
         l2_apply: [0, 1500]
-        lpips_apply: [0, 999999999]
+        lpips_apply: [2000, 999999999]
         tv_apply: [2000, 1000]
         ssim_apply: [1000, 5000]
         cnt_apply: [0, 0]
