@@ -24,7 +24,7 @@ coach:
               UpBlockTimeless2D,
               UpBlockTimeless2D,
               UpBlockTimeless2D,
-              UpBlockTimeless2D]
+              UpDecoderBlockTimeless2D]
       discriminator:
         target: discriminator.PatchGANDiscriminator
         params:

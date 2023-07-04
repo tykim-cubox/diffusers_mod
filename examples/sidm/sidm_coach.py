@@ -17,8 +17,6 @@ from diffusers.utils import check_min_version, is_accelerate_version, is_tensorb
 from diffusers.utils.import_utils import is_xformers_available
 
 
-# 첫번쨰는 일단
-# 
 class Coach(pl.LightningModule):
     def __init__(self, model_config, loss_config, training_config, distiller_config):
         super().__init__()
@@ -33,12 +31,12 @@ class Coach(pl.LightningModule):
         if training_config.allow_tf32:
             torch.backends.cuda.matmul.allow_tf32 = True
 
-
         self.save_hyperparameters()
 
     def load_model(self):
         print("load UNet network...")
-        self.model = UNet2DImageConditionModel.from_config(self.model_config)
+        # self.model = UNet2DImageConditionModel.from_config(self.model_config)
+        self.model = instantiate_from_config(self.model_config.generator)
         
         if self.model_config.use_ema:
             self.ema_model = EMAModel(self.model.parameters(),
@@ -49,9 +47,6 @@ class Coach(pl.LightningModule):
                                       model_cls=UNet2DModel,
                                       model_config=self.model.config,
                                 )
-            
-        self.encoder = ...
-
 
         if self.model_config.enable_xformers_memory_efficient_attention:
             if is_xformers_available():
@@ -74,14 +69,16 @@ class Coach(pl.LightningModule):
             self.noise_scheduler = DDPMScheduler.from_pretrained(self.model_config.scheduler_cfg_path, subfolder="scheduler")
 
     def setup_objectives(self):
-            # super().setup_objectives()
-            # **kwargs 
-            self.loss = instantiate_from_config(self.loss_config)
-            # self.loss = i2i_loss.I2ILoss(**self.loss_config)
+        # Loss를 기존것과 호환할 수 있도록 할 수 있다면
+        # 결국 pred와 target 값을 비교하는 식이라서 l1을 사용할 수 있고
+        # 이미지 space라면 lpips 등을 사용할 수 있게 해야하는데
+        # super().setup_objectives()
+        # **kwargs 
+        self.loss = instantiate_from_config(self.loss_config)
+        # self.loss = i2i_loss.I2ILoss(**self.loss_config)
 
     def configure_optimizers(self):
         lr = self.training_config.learning_rate
-        # op_name = self.training_config.optimizer
         params = list(self.model.parameters())
 
         if self.learn_logvar:
@@ -99,10 +96,10 @@ class Coach(pl.LightningModule):
             num_training_steps=(len(self.training_config.train_length) * self.training_config.num_epochs),)
         
 
-        return [optimizer], lr_scheduler
+        return [optimizer], [lr_scheduler]
 
     def forward(self, src_img):
-        return self.model(src_img)
+        return self.model(src_img).sample
     
     def compute_snr(self, timesteps):
         """
@@ -146,24 +143,26 @@ class Coach(pl.LightningModule):
         return res.expand(broadcast_shape)
 
     def training_step(self, batch, batch_idx):
-        inp = batch['input']
-        out = batch['output']
+        src = batch['src']
+        tgt = batch['tgt']
+        cond = batch['cond']
 
         # Sample noise that we'll add to the images
-        noise = torch.randn(inp.shape)
-        bsz = inp.shape[0]
+        noise = torch.randn(tgt.shape)
+        bsz = tgt.shape[0]
 
         # Sample a random timestep for each image
         timesteps = torch.randint(0, self.noise_scheduler.config.num_train_timesteps, (bsz,)).long()
 
         # Add noise to the clean images according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
-        noisy_images = self.noise_scheduler.add_noise(out, noise, timesteps)
+        noisy_images = self.noise_scheduler.add_noise(tgt, noise, timesteps)
 
         # Predict the noise residual
-        enc_result = self.encoder(inp)
-        model_output = self.model(noisy_images, enc_result, timesteps).sample
+        # enc_result = self.encoder(inp)
+        model_output = self.model(noisy_images, cond, timesteps).sample
 
+        loss = 0.0
         if self.noise_scheduler.config.prediction_type == "epsilon":
             target = noise
 
@@ -184,12 +183,17 @@ class Coach(pl.LightningModule):
                 loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
                 loss = loss.mean()
 
+            # 추가 loss
+            # 여기선 sample space로 돌려야함
+            loss += self.loss(model_output.float(), target.float())
         elif self.noise_scheduler.config.prediction_type == "sample":
             alpha_t = self._extract_into_tensor(
                         self.noise_scheduler.alphas_cumprod, timesteps, (out.shape[0], 1, 1, 1)
                     )
             snr_weights = alpha_t / (1 - alpha_t)
-            loss = snr_weights * F.mse_loss(model_output, out, reduction="none")
+            loss = snr_weights * F.mse_loss(model_output, tgt, reduction="none")
+            # 추가 loss
+            loss += self.loss(model_output.float(), tgt.float())
         else:
             raise ValueError(f"Unsupported prediction type: {self.noise_scheduler.config.prediction_type}")
         
@@ -201,30 +205,49 @@ class Coach(pl.LightningModule):
 
         return loss
 
+    # controlnet
     def on_train_batch_end(self, *args, **kwargs):
         if self.model_config.use_ema:
             self.ema_model(self.model)
 
+    def on_validation_start(self):
+        if self.model_config.use_ema:
+            # Store the UNet parameters temporarily and load the EMA parameters to perform inference.
+            self.ema_model.store(self.model.parameters())
+            self.ema_model.copy_to(self.model.parameters())
+
+        self.pipeline = ...
+        self.pipeline.set_progress_bar_config(disable=True)
+
+        if self.model_config.enable_xformers_memory_efficient_attention: 
+            self.pipeline.enable_xformers_memory_efficient_attention()
+
+        if args.seed is None:
+            self.generator = None
+        else:
+            self.generator = torch.Generator(device=accelerator.device).manual_seed(args.seed)
+
+
+    def on_validation_end(self):
+        del self.pipeline
+        torch.cuda.empty_cache()
+        if self.ema_model.use_ema:
+            # Switch back to the original UNet parameters.
+            self.ema_model.restore(self.model.parameters())
+
+
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
-        pred = self(batch['src'])
-        grid = torchvision.utils.make_grid(pred) 
+
+        image = self.pipeline(batch['cond'], num_inference_steps=20, generator=self.generator).images[0]
+        grid = torchvision.utils.make_grid(image) 
         # self.logger.experiment.add_image('generated_images', grid, 0) 
         self.logger.log_image("name", [grid, batch['tgt']])
-        return pred
-    
-    @torch.no_grad()
-    def validation_step(self, batch, batch_idx):
-        _, loss_dict_no_ema = self.shared_step(batch)
-        with self.ema_scope():
-            _, loss_dict_ema = self.shared_step(batch)
-            loss_dict_ema = {key + '_ema': loss_dict_ema[key] for key in loss_dict_ema}
-        self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
-        self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
-    
-    def configure_gradient_clipping(self, optimizer, gradient_clip_val, gradient_clip_algorithm):
+        return image
+
+    def configure_gradient_clipping(self, optimizer, gradient_clip_algorithm, gradient_clip_val=1):
         if self.current_epoch > 5:
-            gradient_clip_val = gradient_clip_val * 2
+            gradient_clip_val = gradient_clip_val
 
         # Lightning will handle the gradient clipping
         self.clip_gradients(optimizer, gradient_clip_val=gradient_clip_val, gradient_clip_algorithm=gradient_clip_algorithm)

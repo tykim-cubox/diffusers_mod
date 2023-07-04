@@ -8,10 +8,13 @@ import torch.nn as nn
 import torchvision
 import lightning.pytorch as pl
 
-from .utils import instantiate_from_config, exists, count_params, discard_kwargs, load_state_dict, get_model_size
-from .optimizer import optimizers, lr_schedulers
-from .diffaug import DiffAugment
+from utils import instantiate_from_config, exists, count_params, discard_kwargs, load_state_dict, get_model_size
+from optimizer import optimizers, lr_schedulers
+from diffaug import DiffAugment
 # from .losses import i2iloss
+
+import sys
+sys.path.append('/purestorage/project/tyk/project9/diffusers_mod/src/diffusers')
 
 class SimpleCoach(pl.LightningModule):
     def __init__(self, model_config, loss_config, training_config, use_ema=False, ckpt_path=None):
@@ -140,11 +143,13 @@ class GANCoach(pl.LightningModule):
         return [opt_g, opt_d], scheduler_lst
 
     def forward(self, src_img):
-        return self.model(src_img)
+        return self.model(src_img).sample
     
     def training_step(self, batch, batch_idx):
         optimizer_g, optimizer_d = self.optimizers()
-        scheduler_g, scheduler_d = self.lr_schedulers()
+        scheduler_lst = self.lr_schedulers()
+        if scheduler_lst:
+            scheduler_g, scheduler_d = scheduler_lst[0], scheduler_lst[1]
         gt = batch['tgt']
         # train d
         if self.loss.use_loss['gan']:
@@ -165,7 +170,8 @@ class GANCoach(pl.LightningModule):
                 {self.log(f'{key}', value) for key, value in d_loss_dict.items()}
                 self.manual_backward(d_loss)
                 optimizer_d.step()
-                scheduler_d.step()
+                if scheduler_lst:
+                    scheduler_d.step()
             self.untoggle_optimizer(optimizer_d)
         
         # traing g
@@ -187,7 +193,8 @@ class GANCoach(pl.LightningModule):
             {self.log(f'{key}', value) for key, value in g_loss_dict.items()}
             self.manual_backward(g_loss)
             optimizer_g.step()
-            scheduler_g.step()
+            if scheduler_lst:
+                scheduler_g.step()
 
 
         self.untoggle_optimizer(optimizer_g)

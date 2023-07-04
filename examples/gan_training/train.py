@@ -18,7 +18,8 @@ from utils import create_model, create_coach, load_state_dict
 from omegaconf import OmegaConf
 
 
-import os
+import sys
+sys.path.append('/purestorage/project/tyk/project9/diffusers_mod/src/')
 os.chdir('../../')
 
 # Lees wandb

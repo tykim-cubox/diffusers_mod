@@ -105,7 +105,8 @@ class UNetTimeless2DModel(ModelMixin, ConfigMixin):
         super().__init__()
 
         self.sample_size = sample_size
-
+        print(type(down_block_types[0]))
+        print(len(down_block_types), len(up_block_types))
         # Check inputs
         if len(down_block_types) != len(up_block_types):
             raise ValueError(
@@ -220,7 +221,9 @@ class UNetTimeless2DModel(ModelMixin, ConfigMixin):
 
         # 3. down
         down_block_res_samples = (sample,)
-        for downsample_block in self.down_blocks:
+        print('down_blocks', len(self.down_blocks))
+        for idx, downsample_block in enumerate(self.down_blocks):
+
             if hasattr(downsample_block, "skip_conv"):
                 sample, res_samples, skip_sample = downsample_block(
                     hidden_states=sample, skip_sample=skip_sample
@@ -229,21 +232,26 @@ class UNetTimeless2DModel(ModelMixin, ConfigMixin):
                 sample, res_samples = downsample_block(hidden_states=sample)
 
             down_block_res_samples += res_samples
-
+            print(idx, ':', len(down_block_res_samples))
+        print('down_block_res_samples : ', len(down_block_res_samples))
         # 4. mid
         sample = self.mid_block(sample)
 
         # 5. up
         skip_sample = None
-        for upsample_block in self.up_blocks:
-            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
-            down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
-
-            if hasattr(upsample_block, "skip_conv"):
-                sample, skip_sample = upsample_block(sample, res_samples, skip_sample)
+        for idx, upsample_block in enumerate(self.up_blocks):
+            if idx == len(self.up_blocks)-1:
+                sample = upsample_block(sample)
             else:
-                sample = upsample_block(sample, res_samples)
+                res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
+                down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
 
+                if hasattr(upsample_block, "skip_conv"):
+                    sample, skip_sample = upsample_block(sample, res_samples, skip_sample)
+                else:
+                    sample = upsample_block(sample, res_samples)
+                print(idx, ':', len(down_block_res_samples))
+        print('up_blocks', len(self.up_blocks))
         # 6. post-process
         sample = self.conv_norm_out(sample)
         sample = self.conv_act(sample)
