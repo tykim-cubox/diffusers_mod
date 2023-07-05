@@ -6,7 +6,7 @@ from lpips import LPIPS
 from focal_frequency_loss import FocalFrequencyLoss as FFL
 from pytorch_wavelets import DWTInverse, DWTForward
 
-from core.utils import exists
+from utils import exists
 
 class SimpleLoss(nn.Module):
     def __init__(self, domain_rgb, l1_lambda, l2_lambda):
@@ -141,6 +141,8 @@ class I2ILoss(nn.Module):
         self.loss_apply.update({'clip': clip_apply})
         self.use_loss.update({'clip': False})
 
+        self.dec_loss = nn.L1Loss()
+        
         self.toggle_loss(0)
 
     def toggle_loss(self, step):
@@ -225,6 +227,14 @@ class I2ILoss(nn.Module):
             r1 = self.r1_reg(real_logit, real_img, self.r1_gamma)
             reg_d_dict.update({'r1_reg' : r1})
             return reg_d_dict, r1
+
+    def loss_dec(self, real, pred, type):
+        loss = 0.0
+        loss_dict = {}
+
+        loss += self.dec_loss(real, pred)
+        loss_dict.update({f'{type}_dec_loss': loss})
+        return loss_dict, loss
 
     def img_to_dwt(self, img):
         low, high = self.dwt(img)

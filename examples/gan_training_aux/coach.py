@@ -87,6 +87,7 @@ class AuxGANCoach(pl.LightningModule):
         self.depth_decoder = instantiate_from_config(self.model_config.depth_decoder)
         self.scribble_decoder = instantiate_from_config(self.model_config.scribble_decoder)
 
+        self.aux_dict = {'seg' : self.seg_decoder, 'depth': self.depth_decoder, 'scribble' : self.scribble_decoder}
         self.discriminator = instantiate_from_config(self.model_config.discriminator)
         count_params(self.discriminator, verbose=True)
 
@@ -139,12 +140,13 @@ class AuxGANCoach(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         optimizer_g, optimizer_d, optimizer_seg_dec, optimizer_depth_dec, optimizer_scribble_dec = self.optimizers()
+        dec_opt_dict = {'seg': optimizer_seg_dec, 'depth': optimizer_depth_dec, 'scribble' : optimizer_scribble_dec}
         scheduler_lst = self.lr_schedulers()
         if scheduler_lst:
             scheduler_g, scheduler_d = scheduler_lst[0], scheduler_lst[1]
 
         gt = batch['tgt']
-        # train d
+        # train d and dec
         if self.loss.use_loss['gan']:
             self.toggle_optimizer(optimizer_d)
             self.toggle_optimizer(optimizer_seg_dec)
@@ -160,20 +162,29 @@ class AuxGANCoach(pl.LightningModule):
                 optimizer_d.step()
             else:
                 optimizer_d.zero_grad()
-                optimizer_scribble_dec.zero_grad()
-
-                fake_img = self(batch['src'])
-
-
+                {opt.zero_grad() for opt in dec_opt_dict.values()}
                 
-                fake_logit = self.discriminator(self(batch['src']).detach())
+                out = self(batch['src'])
+
+                fake_logit = self.discriminator(out.sample.detach())
                 real_logit = self.discriminator(gt)
+                
                 d_loss_dict, d_loss = self.loss.loss_d(fake_logit, real_logit)
                 {self.log(f'{key}', value) for key, value in d_loss_dict.items()}
                 self.manual_backward(d_loss)
                 optimizer_d.step()
                 if scheduler_lst:
                     scheduler_d.step()
+
+                dec_outputs = {f'{key}' : self.aux_dict[key](feat) for feat, key in zip(out.feature, self.aux_dict)}
+                for key, dec_out in dec_outputs.items():
+                    dec_out = dec_outputs[key]
+                    dec_loss_dict, loss = self.loss.loss_dec(batch['scribble'], dec_out)
+                    {self.log(f'{key}', value) for key, value in dec_loss_dict.items()}
+                    self.manual_backward(loss)
+                    dec_opt_dict[key].step()
+
+            self.untoggle_optimizer(optimizer_d)
             self.untoggle_optimizer(optimizer_seg_dec)
             self.untoggle_optimizer(optimizer_depth_dec)
             self.untoggle_optimizer(optimizer_scribble_dec)

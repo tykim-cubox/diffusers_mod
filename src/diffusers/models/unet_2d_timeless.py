@@ -33,6 +33,7 @@ class UNet2DOutput(BaseOutput):
     """
 
     sample: torch.FloatTensor
+    feature: list
 
 
 class UNetTimeless2DModel(ModelMixin, ConfigMixin):
@@ -101,12 +102,13 @@ class UNetTimeless2DModel(ModelMixin, ConfigMixin):
         add_attention: bool = True,
         class_embed_type: Optional[str] = None,
         num_class_embeds: Optional[int] = None,
+        decoder_feature_return: bool = False
     ):
         super().__init__()
 
         self.sample_size = sample_size
-        print(type(down_block_types[0]))
-        print(len(down_block_types), len(up_block_types))
+        # print(type(down_block_types[0]))
+        # print(len(down_block_types), len(up_block_types))
         # Check inputs
         if len(down_block_types) != len(up_block_types):
             raise ValueError(
@@ -221,7 +223,7 @@ class UNetTimeless2DModel(ModelMixin, ConfigMixin):
 
         # 3. down
         down_block_res_samples = (sample,)
-        print('down_blocks', len(self.down_blocks))
+        # print('down_blocks', len(self.down_blocks))
         for idx, downsample_block in enumerate(self.down_blocks):
 
             if hasattr(downsample_block, "skip_conv"):
@@ -232,12 +234,72 @@ class UNetTimeless2DModel(ModelMixin, ConfigMixin):
                 sample, res_samples = downsample_block(hidden_states=sample)
 
             down_block_res_samples += res_samples
-            print(idx, ':', len(down_block_res_samples))
-        print('down_block_res_samples : ', len(down_block_res_samples))
         # 4. mid
         sample = self.mid_block(sample)
 
         # 5. up
+        feature = []
+        skip_sample = None
+        for idx, upsample_block in enumerate(self.up_blocks):
+            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
+            down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
+
+            if hasattr(upsample_block, "skip_conv"):
+                sample, skip_sample = upsample_block(sample, res_samples, skip_sample)
+            else:
+                sample = upsample_block(sample, res_samples)
+            if self.config.decoder_feature_return:# and (idx%2 == 0):
+                feature.append(sample)
+
+        # 6. post-process
+        sample = self.conv_norm_out(sample)
+        sample = self.conv_act(sample)
+        sample = self.conv_out(sample)
+
+        if skip_sample is not None:
+            sample += skip_sample
+
+        if not return_dict:
+            return (sample,)
+
+        return UNet2DOutput(sample=sample, feature=feature)
+
+
+class UNetTimelessNonEarly2DModel(UNetTimeless2DModel):
+    def forward(self,
+        sample: torch.FloatTensor,
+        class_labels: Optional[torch.Tensor] = None,
+        return_dict: bool = True,
+    ) -> Union[UNet2DOutput, Tuple]:
+        # 0. center input if necessary
+        if self.config.center_input_sample:
+            sample = 2 * sample - 1.0
+
+        
+        # 2. pre-process
+        skip_sample = sample
+        sample = self.conv_in(sample)
+
+        # 3. down
+        down_block_res_samples = (sample,)
+        # print('down_blocks', len(self.down_blocks))
+        for idx, downsample_block in enumerate(self.down_blocks):
+
+            if hasattr(downsample_block, "skip_conv"):
+                sample, res_samples, skip_sample = downsample_block(
+                    hidden_states=sample, skip_sample=skip_sample
+                )
+            else:
+                sample, res_samples = downsample_block(hidden_states=sample)
+
+            down_block_res_samples += res_samples
+            # print(idx, ':', len(down_block_res_samples))
+        # print('down_block_res_samples : ', len(down_block_res_samples))
+        # 4. mid
+        sample = self.mid_block(sample)
+
+        # 5. up
+        feature = []
         skip_sample = None
         for idx, upsample_block in enumerate(self.up_blocks):
             if idx == len(self.up_blocks)-1:
@@ -250,8 +312,8 @@ class UNetTimeless2DModel(ModelMixin, ConfigMixin):
                     sample, skip_sample = upsample_block(sample, res_samples, skip_sample)
                 else:
                     sample = upsample_block(sample, res_samples)
-                print(idx, ':', len(down_block_res_samples))
-        print('up_blocks', len(self.up_blocks))
+                # print(idx, ':', len(down_block_res_samples))
+        # print('up_blocks', len(self.up_blocks))
         # 6. post-process
         sample = self.conv_norm_out(sample)
         sample = self.conv_act(sample)
@@ -263,4 +325,4 @@ class UNetTimeless2DModel(ModelMixin, ConfigMixin):
         if not return_dict:
             return (sample,)
 
-        return UNet2DOutput(sample=sample)
+        return UNet2DOutput(sample=sample, feature=feature)
