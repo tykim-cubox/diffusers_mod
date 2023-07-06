@@ -3,7 +3,7 @@ coach:
   params:
     model_config:
       unet:
-        target: src.diffusers.models.unet_2d_timeless.UNetTimeless2DModel
+        target: src.diffusers.models.unet_2d_condition.UNet2DImageConditionModel
         params:
           sample_size : [512, 512]
           in_channels: 3
@@ -24,6 +24,9 @@ coach:
               UpBlockTimeless2D,
               UpBlockTimeless2D,
               UpDecoderBlockTimeless2D]
+      pipeline:
+        target:
+        params:
       use_ema: False
       ema_max_decay: 0.9999
       ema_inv_gamma: 1.0

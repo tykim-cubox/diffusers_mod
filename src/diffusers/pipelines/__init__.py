@@ -99,7 +99,7 @@ else:
         VersatileDiffusionTextToImagePipeline,
     )
     from .vq_diffusion import VQDiffusionPipeline
-
+    from .sidm import SIDMPipeline
 try:
     if not is_onnx_available():
         raise OptionalDependencyNotAvailable()

@@ -1,20 +1,27 @@
+import os
+import math
+# random
+import random
+
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
+from torch.optim import Adam, AdamW
+import torchvision
+import lightning.pytorch as pl
 
 from packaging import version
 
-import torch.nn.functional as F
-from torch.optim import Adam, AdamW
-# optimizers = {'adamw' : AdamW,
-#               'adam' : Adam,}
+from .utils import instantiate_from_config, exists, count_params, discard_kwargs, load_state_dict, get_model_size
+
 
 import diffusers
-from diffusers import DDPMPipeline, DDPMScheduler, UNet2DModel, UNet2DImageConditionModel
+from diffusers import DDPMPipeline, DDPMScheduler, UNet2DModel, UNet2DImageConditionModel, UniPCMultistepScheduler
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import EMAModel
 from diffusers.utils import check_min_version, is_accelerate_version, is_tensorboard_available, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
+
 
 
 class Coach(pl.LightningModule):
@@ -216,16 +223,17 @@ class Coach(pl.LightningModule):
             self.ema_model.store(self.model.parameters())
             self.ema_model.copy_to(self.model.parameters())
 
-        self.pipeline = ...
+        self.pipeline = instantiate_from_config(self.model_config.generator)
+        self.pipeline.scheduler = UniPCMultistepScheduler.from_config(self.pipeline.scheduler.config)
         self.pipeline.set_progress_bar_config(disable=True)
 
         if self.model_config.enable_xformers_memory_efficient_attention: 
             self.pipeline.enable_xformers_memory_efficient_attention()
 
-        if args.seed is None:
+        if self.trainign_config.seed is None:
             self.generator = None
         else:
-            self.generator = torch.Generator(device=accelerator.device).manual_seed(args.seed)
+            self.generator = torch.Generator().manual_seed(self.trainign_config.seed)
 
 
     def on_validation_end(self):
