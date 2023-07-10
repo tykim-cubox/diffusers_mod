@@ -45,7 +45,7 @@ args = parser.parse_args()
 
 
 wandb.login(key=wandb_key, host=wandb_host, force=True,)
-wandb_logger = WandbLogger(name='test_1', project='ai_service_model', log_model=True)
+wandb_logger = WandbLogger(name='diffuser-gan-aux', project='ai_service_model', log_model=True)
 
 ddp = DDPStrategy(process_group_backend="nccl", find_unused_parameters=True)
 # ddp = DDPStrategy(process_group_backend="nccl")
