@@ -12,7 +12,7 @@ from lightning.pytorch.strategies import DDPStrategy
 
 
 import coach as coach
-from dataset import PairedDataset
+from dataset import PairedDataset, MultipleLabelDataset
 from utils import create_model, create_coach, load_state_dict
 
 from omegaconf import OmegaConf
@@ -36,7 +36,7 @@ parser.add_argument("--checkpoint_dir", type=str, default=None, help="path to ch
 parser.add_argument("--max_steps", type=int, default=25000, help="training step")
 parser.add_argument("--val_freq", type=int, default=0, help="check validation every n train batches")
 parser.add_argument("--config_path", type=str, default=None, help="training model configuration path")
-parser.add_argument("--batch_size", type=int, default=32, help="batch_size")
+parser.add_argument("--batch_size", type=int, default=4, help="batch_size")
 parser.add_argument("--num_nodes", type=int, default=2, help="num nodes")    
 parser.add_argument("--deterministic", action='store_true', help="reproducibility")
 parser.add_argument("--resume_path", type=str, default=None, help="resume checkpoint path")
@@ -65,12 +65,15 @@ root='/purestorage/datasets/DGM/iti_pairset'
 src_name='origin'
 cond_name='spiga'
 tgt_name='style012'
+depth_name='depth'
+seg_name='seg'
+scribble_name='scribble'
 train_list_path = root+f'/list/{tgt_name}_train.txt'
 val_list_path = root+f'/list/{tgt_name}_val.txt'
 
 
-train_dataset = PairedDataset(root, train_list_path, src_name, cond_name, tgt_name, resize_size=256)
-val_dataset = PairedDataset(root, val_list_path, src_name, cond_name, tgt_name, resize_size=256)
+train_dataset = MultipleLabelDataset(root, train_list_path, src_name, cond_name, tgt_name, resize_size=512)
+val_dataset = MultipleLabelDataset(root, val_list_path, src_name, cond_name, tgt_name, resize_size=512)
 # train_size = int(0.95 * len(dataset))
 # val_size = len(dataset) - train_size 
 # train_dataset, val_dataset = random_split(dataset, [train_size, val_size])

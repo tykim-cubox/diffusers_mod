@@ -220,3 +220,86 @@ class PairedDataset(Dataset):
     def __getitem__(self, idx):
         data = self._load_raw_image(idx)
         return self.trsf(data)
+
+
+class PairedDatasetOld(Dataset):
+    def __init__(self, src_path, tgt_path, crop=False, resize_size=None, normalize=True, random_flip=0.5, exclude_cond=True, loader_type='cv', inte_mode='bicubic'):
+        super().__init__()
+        # self.root = Path(root)
+        # self.src_path = self.root.joinpath(src_name)
+        # self.tgt_path = self.root.joinpath(tgt_name)
+        # self.cond_path = self.root.joinpath(cond_name)
+        self.src_path = src_path
+        self.tgt_path = tgt_path
+        self.exclude_cond = exclude_cond
+
+        Image.init()
+
+        self.src_image_fnames = sorted([f for f in os.listdir(self.src_path) if self._file_ext(f) in Image.EXTENSION])
+        self.tgt_image_fnames = sorted([f for f in os.listdir(self.tgt_path) if self._file_ext(f) in Image.EXTENSION])
+        
+
+        self.loader = loaders[loader_type]
+        self.interpolation = interpolation[inte_mode]
+
+        self.trsf_list = []
+        if crop:
+            self.crop = CenterCropMargin(fraction=0.95)
+            self.trsf_list.append(self.crop)
+        
+        self.trsf_list.append(ToTensor())
+
+        if resize_size is not None and interpolation != 'wo_resize':
+            self.resizer = Resize(resize_size, interpolation=self.interpolation)
+            self.trsf_list.append(self.resizer)
+
+        if random_flip > 0:
+            self.flipper = RandomHorizontalFlip(random_flip)
+            self.trsf_list.append(self.flipper)
+        
+        if normalize:
+            self.normalizer = Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            self.trsf_list.append(self.normalizer)
+
+        self.trsf = transforms.Compose(self.trsf_list)
+
+    @staticmethod
+    def _file_ext(fname):
+        return os.path.splitext(fname)[1].lower()
+
+    # def transformation(self, src_img, r_img):
+    #     if self.crop is not None:
+    #         p_img, r_img = self.crop(p_img), self.crop(r_img)
+
+    #     if self.resizer is not None:
+    #         p_img, r_img = self.resizer(p_img), self.resizer(r_img)
+
+    #     if self.random_flip and random.random() > 0.5:
+    #         p_img = TF.hflip(p_img)
+    #         r_img = TF.hflip(r_img)
+
+    #     p_img, r_img = self.to_tensor(p_img), self.to_tensor(r_img)
+
+    #     if self.normalizer is not None:
+    #         p_img, r_img = self.normalizer(p_img), self.normalizer(r_img)
+    #     return p_img, r_img
+
+
+
+    def _load_raw_image(self, raw_idx):
+        src_fname = self.src_image_fnames[raw_idx]
+        src_img = self.loader(os.path.join(self.src_path, src_fname))
+
+        tgt_fname = self.tgt_image_fnames[raw_idx]
+        tgt_img = self.loader(os.path.join(self.tgt_path, tgt_fname))
+
+        data = {'src': src_img, 'tgt':tgt_img}
+
+        return data
+
+    def __len__(self):
+        return len(self.src_image_fnames)
+    
+    def __getitem__(self, idx):
+        data = self._load_raw_image(idx)
+        return self.trsf(data)

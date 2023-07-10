@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 from .msssim import SSIM
 from .insight_face.model_irse import Backbone
 
-from core.utils import load_state_dict
+from utils import load_state_dict
 import clip
 import numpy as np
 

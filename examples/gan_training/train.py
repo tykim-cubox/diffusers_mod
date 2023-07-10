@@ -12,7 +12,7 @@ from lightning.pytorch.strategies import DDPStrategy
 
 
 import coach as coach
-from dataset import PairedDataset
+from dataset import PairedDataset, PairedDatasetOld
 from utils import create_model, create_coach, load_state_dict
 
 from omegaconf import OmegaConf
@@ -61,23 +61,42 @@ if args.deterministic:
     seed_everything(1, workers=True)
     trainer_cfg.update({'deterministic': True})
 
+STYLE='arcane'
+if STYLE=='kpop':
 # Dataset
-root='/purestorage/datasets/DGM/iti_pairset'
-src_name='origin'
-cond_name='spiga'
-tgt_name='style012'
-train_list_path = root+f'/list/{tgt_name}_train.txt'
-val_list_path = root+f'/list/{tgt_name}_val.txt'
+    root='/purestorage/datasets/DGM/iti_pairset'
+    src_name='origin'
+    cond_name='spiga'
+    tgt_name='style012'
+    train_list_path = root+f'/list/{tgt_name}_train.txt'
+    val_list_path = root+f'/list/{tgt_name}_val.txt'
 
 
-train_dataset = PairedDataset(root, train_list_path, src_name, cond_name, tgt_name, resize_size=256)
-val_dataset = PairedDataset(root, val_list_path, src_name, cond_name, tgt_name, resize_size=256)
-# train_size = int(0.95 * len(dataset))
-# val_size = len(dataset) - train_size 
-# train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    train_dataset = PairedDataset(root, train_list_path, src_name, cond_name, tgt_name, resize_size=256)
+    val_dataset = PairedDataset(root, val_list_path, src_name, cond_name, tgt_name, resize_size=256)
+    # train_size = int(0.95 * len(dataset))
+    # val_size = len(dataset) - train_size 
+    # train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=8, shuffle=True, drop_last=True)
-val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=8)
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=8, shuffle=True, drop_last=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=8)
+
+if STYLE=='arcane':
+    src_path = '/purestorage/datasets/DGM/FFHQ_origin/images1024x1024' 
+    tgt_path = f"/purestorage/datasets/DGM/iti_pairset2/style"
+
+    dataset = PairedDatasetOld(src_path, tgt_path, resize_size=256)
+
+    val_indices = [1, 2, 3, 4, 5, 6, 7, 8]
+    all_indices = list(range(len(dataset)))
+    train_indices = [idx for idx in all_indices if idx not in val_indices]
+
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices)
+
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=8, shuffle=True, drop_last=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=8)
+
 
 # dataset = PairedDataset(root, src_name, cond_name, tgt_name, resize_size=256)
 
