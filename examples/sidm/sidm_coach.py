@@ -24,7 +24,7 @@ from diffusers.utils.import_utils import is_xformers_available
 
 
 
-class Coach(pl.LightningModule):
+class DiffusionCoach(pl.LightningModule):
     def __init__(self, model_config, loss_config, training_config, distiller_config):
         super().__init__()
         self.model_config = model_config

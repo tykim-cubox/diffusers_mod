@@ -1,5 +1,5 @@
 coach:
-  target: coach.GANCoach
+  target: coach.DiffusionCoach
   params:
     model_config:
       unet:
@@ -25,8 +25,7 @@ coach:
               UpBlockTimeless2D,
               UpDecoderBlockTimeless2D]
       pipeline:
-        target:
-        params:
+        target: src.diffusers.pipelines.sidm.SIDMPipeline
       use_ema: False
       ema_max_decay: 0.9999
       ema_inv_gamma: 1.0

@@ -226,7 +226,7 @@ class MultipleLabelDataset(Dataset):
     def __init__(self, root, file_list_path, src_name='source', cond_name='target', tgt_name='condition',
                  depth_name='depth', scribble_name='scribble', seg_name='seg',
                  crop=False, resize_size=None, normalize=True, random_flip=0.5, exclude_cond=True, 
-                 loader_type='cv', inte_mode='bicubic'):
+                 loader_type='cv', inte_mode='bicubic', aux_size=256):
         super().__init__()
         # self.root = Path(root)
         # self.src_path = self.root.joinpath(src_name)
@@ -240,6 +240,7 @@ class MultipleLabelDataset(Dataset):
         self.scribble_path = os.path.join(root, scribble_name)
         self.seg_path = os.path.join(root, seg_name)
         self.exclude_cond = exclude_cond
+        self.aux_size = aux_size
 
         Image.init()
 
@@ -254,6 +255,10 @@ class MultipleLabelDataset(Dataset):
         self.trsf_list = []
         self.trsf_list.append(ToTensor())
         
+        if resize_size is not None and interpolation != 'wo_resize':
+            self.resizer = Resize(resize_size, interpolation=self.interpolation)
+            self.trsf_list.append(self.resizer)
+
         if normalize:
             self.normalizer = Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
             self.trsf_list.append(self.normalizer)
@@ -262,7 +267,7 @@ class MultipleLabelDataset(Dataset):
 
         self.flipper = RandomHorizontalFlip(random_flip) if random_flip > 0 else None
         self.resizer = Resize(resize_size, interpolation=self.interpolation)
-        self.resizer_and_flipper = transforms.Compose([self.flipper, self.resizer])
+        # self.resizer_and_flipper = transforms.Compose([self.flipper, self.resizer])
         
     @staticmethod
     def _file_ext(fname):
@@ -301,40 +306,49 @@ class MultipleLabelDataset(Dataset):
         rgb_data = self._rgb_trsf(rgb_data)
         data.update(rgb_data)
         
-        scribble_data = self._scribble_trsf(data['scribble'])
-        data.update(scribble_data)
+        data['scribble'] = self._scribble_trsf(data['scribble'])
+        # scribble_data = self._scribble_trsf(data['scribble'])
+        # data.update(scribble_data)
 
-        depth_data = self._depth_trsf(data['depth'])
-        data.update(depth_data)
+        data['depth'] = self._scribble_trsf(data['depth'])
+        # depth_data = self._depth_trsf(data['depth'])
+        # data.update(depth_data)
 
-        seg_data= self._seg_trsf(data['seg'])
-        data.update(seg_data)
-        
-        return self.resizer_and_flipper(data)
+        # seg_data= self._seg_trsf(data['seg'])
+        # data.update(seg_data)
+        data['seg']= self._seg_trsf(data['seg'])
+
+        return self.flipper(data)
 
     def _rgb_trsf(self, data):
         return self.rgb_trsf(data)
         
     def _scribble_trsf(self, scr):
         scr = self.HWC3(scr)
+        scr = self.resize_image(scr, self.aux_size)
         scr = self.nms(scr, 127, 3.0)
         scr = cv2.GaussianBlur(scr, (0, 0), 3.0)
         scr[scr > 4] = 255
         scr[scr < 255] = 0
-        torch.from_numpy(scr.copy()).float() / 255.0 
-        scr = einops.rearrange(scr, 'b h w c -> b c h w').clone()
+        scr = torch.from_numpy(scr.copy()).float() / 255.0 
+        # scr = einops.rearrange(scr, 'b h w c -> b c h w').clone()
+        scr = einops.rearrange(scr, 'h w c -> c h w').clone()
         return scr
 
     def _depth_trsf(self, depth):
         depth = self.HWC3(depth)
-        depth = torch.from_numpy(depth.copy()).float().cuda() / 255.0
-        depth = einops.rearrange(depth, 'b h w c -> b c h w').clone()
+        depth = self.resize_image(depth, self.aux_size)
+        depth = torch.from_numpy(depth.copy()).float() / 255.0
+        # depth = einops.rearrange(depth, 'b h w c -> b c h w').clone()
+        depth = einops.rearrange(depth, 'h w c -> c h w').clone()
         return depth
 
     def _seg_trsf(self, seg):
         seg = self.HWC3(seg)
-        seg = torch.from_numpy(seg.copy()).float().cuda() / 255.0
-        seg = einops.rearrange(seg, 'b h w c -> b c h w').clone()
+        seg = self.resize_image(seg, self.aux_size)
+        seg = torch.from_numpy(seg.copy()).float() / 255.0
+        # seg = einops.rearrange(seg, 'b h w c -> b c h w').clone()
+        seg = einops.rearrange(seg, 'h w c -> c h w').clone()
         return seg
     
     def nms(self, x, t, s):
@@ -371,3 +385,15 @@ class MultipleLabelDataset(Dataset):
             y = color * alpha + 255.0 * (1.0 - alpha)
             y = y.clip(0, 255).astype(np.uint8)
             return y
+
+    def resize_image(self, input_image, resolution):
+        H, W, C = input_image.shape
+        H = float(H)
+        W = float(W)
+        k = float(resolution) / min(H, W)
+        H *= k
+        W *= k
+        H = int(np.round(H / 64.0)) * 64
+        W = int(np.round(W / 64.0)) * 64
+        img = cv2.resize(input_image, (W, H), interpolation=cv2.INTER_LANCZOS4 if k > 1 else cv2.INTER_AREA)
+        return img

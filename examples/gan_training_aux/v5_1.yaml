@@ -1,5 +1,5 @@
 coach:
-  target: coach.GANCoach
+  target: coach.AuxGANCoach
   params:
     use_ema: False
     model_config:
@@ -90,13 +90,16 @@ coach:
 
     training_config:
       optimizer : adam
-      batch_size : 64
+      batch_size : 4
       g_scheduler : False
       g_t_mult : 2
       d_scheduler : False
       d_t_mult : 2
       lr : 1.0e-04
       disc_lr : 1.0e-05
+      seg_dec_lr: 1.0e-04
+      depth_dec_lr: 1.0e-04
+      scribble_dec_lr: 1.0e-04
       generator_step : 2
       d_reg_every : 16
       topk_training : False

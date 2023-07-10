@@ -6,7 +6,6 @@ os.chdir('../../')
 from src.diffusers.models.unet_2d_blocks import *
 from src.diffusers.models.activations import get_activation
 
-    
 
 class AuxDecoder(nn.Module):
     def __init__(self, 
@@ -16,16 +15,21 @@ class AuxDecoder(nn.Module):
                  norm_eps: float = 1e-5,
                  act_fn: str = "silu",
                  norm_num_groups: int = 32,
-                 attention_head_dim: Optional[int] = 8
+                 attention_head_dim: Optional[int] = 8,
+                 start_spatial_dim = 32,
+                 end_spatial_dim = 256,
+                 final_outchannel = 3
                  ):
         super().__init__()
         reversed_block_out_channels = list(reversed(block_out_channels)) # [512, 256, 128, 64]
         self.up_blocks = nn.ModuleList([])
+
+        num_upsamples = int(np.log2(end_spatial_dim // start_spatial_dim))
+        upsample_flags = [True] * num_upsamples + [False] * (len(up_block_types) - num_upsamples)
+
         for i, up_block_type in enumerate(up_block_types):
             input_channel = reversed_block_out_channels[i]
             output_channel = reversed_block_out_channels[min(i + 1, len(block_out_channels) - 1)]
-
-            is_final_block = i == len(block_out_channels) - 1
 
             up_block = get_up_block(
                 up_block_type,
@@ -34,7 +38,7 @@ class AuxDecoder(nn.Module):
                 out_channels=output_channel,
                 prev_output_channel = None,
                 temb_channels = None,
-                add_upsample=not is_final_block,
+                add_upsample=upsample_flags[i],
                 resnet_eps=norm_eps,
                 resnet_act_fn=act_fn,
                 resnet_groups=norm_num_groups,
@@ -55,11 +59,10 @@ class AuxDecoder(nn.Module):
             self.conv_act = None
             
         conv_out_kernel = 3
-        out_channels = 3
 
         conv_out_padding = (conv_out_kernel - 1) // 2
         self.conv_out = nn.Conv2d(
-            block_out_channels[0], out_channels, kernel_size=conv_out_kernel, padding=conv_out_padding
+            block_out_channels[0], final_outchannel, kernel_size=conv_out_kernel, padding=conv_out_padding
         )
     def forward(self,
                 sample: torch.FloatTensor,
@@ -75,3 +78,4 @@ class AuxDecoder(nn.Module):
             return (sample,)
 
         return sample
+        #return UNet2DConditionOutput(sample=sample)
