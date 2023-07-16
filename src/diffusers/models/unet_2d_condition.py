@@ -1008,7 +1008,31 @@ class UNet2DImageConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersM
                 cross_attention_kwargs: Optional[Dict[str, Any]] = None,
                 added_cond_kwargs: Optional[Dict[str, torch.Tensor]] = None,
                 ):
-        
+        r"""
+        Args:
+            sample (`torch.FloatTensor`): (batch, channel, height, width) noisy inputs tensor
+            timestep (`torch.FloatTensor` or `float` or `int`): (batch) timesteps
+            encoder_hidden_states (`torch.FloatTensor`): (batch, sequence_length, feature_dim) encoder hidden states
+            encoder_attention_mask (`torch.Tensor`):
+                (batch, sequence_length) cross-attention mask, applied to encoder_hidden_states. True = keep, False =
+                discard. Mask will be converted into a bias, which adds large negative values to attention scores
+                corresponding to "discard" tokens.
+            return_dict (`bool`, *optional*, defaults to `True`):
+                Whether or not to return a [`models.unet_2d_condition.UNet2DConditionOutput`] instead of a plain tuple.
+            cross_attention_kwargs (`dict`, *optional*):
+                A kwargs dictionary that if specified is passed along to the `AttentionProcessor` as defined under
+                `self.processor` in
+                [diffusers.cross_attention](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/cross_attention.py).
+            added_cond_kwargs (`dict`, *optional*):
+                A kwargs dictionary that if specified includes additonal conditions that can be used for additonal time
+                embeddings or encoder hidden states projections. See the configurations `encoder_hid_dim_type` and
+                `addition_embed_type` for more information.
+
+        Returns:
+            [`~models.unet_2d_condition.UNet2DConditionOutput`] or `tuple`:
+            [`~models.unet_2d_condition.UNet2DConditionOutput`] if `return_dict` is True, otherwise a `tuple`. When
+            returning a tuple, the first element is the sample tensor.
+        """
 
         # 1. time
         timesteps = timestep
